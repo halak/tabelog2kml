@@ -1,0 +1,3 @@
+beautifulsoup4>=4.5.1
+html5lib>=0.999999999
+PyYAML>=3.11
