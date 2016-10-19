@@ -6,18 +6,18 @@ class Restaurant(object):
         self.url = page.find(id='rdnavi2-top').find('a')['href']
 
         string = lambda s: ''.join(s.stripped_strings)
-        self.name = string(information.find(property='v:name'))
-        self.category = string(information.find(property='v:category'))
-        self.address = string(information.find(rel='v:address'))
+
+        rows = information.find_all('tr')
+        rows = {string(row.find('th')): string(row.find('td')) for row in rows}
+
+        self.name = rows.get('店名')
+        self.category = rows.get('ジャンル')
 
         from urllib.parse import urlparse, parse_qs as urldecode
         m = information.find('div', 'rst-map').find('img')
         location = urldecode(urlparse(m['data-original']).query)['center']
         location = tuple([s.strip() for s in location[0].split(',')] + ['0.0'])
         self.location = (location[1], location[0], location[2])
-
-        rows = information.find_all('tr')
-        rows = {string(row.find('th')): string(row.find('td')) for row in rows}
 
         self.closed_comment = rows.get('定休日')
 
@@ -27,7 +27,7 @@ class Restaurant(object):
 def main():
     import yaml
 
-    with open('example.yaml', 'r') as f:
+    with open('example.yaml', 'r', encoding='utf-8') as f:
         data = yaml.load(f)
 
     restaurants = load_restaurants(data['urls'])
@@ -70,17 +70,18 @@ def load_restaurants(urls):
 def load_pages(urls):
     import concurrent.futures
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=32) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
         futures = [executor.submit(load_page, url) for url in urls]
         return dict([future.result() for future in concurrent.futures.as_completed(futures)])
 
 
 def load_page(url):
-    from urllib.request import urlopen
+    import requests
     from bs4 import BeautifulSoup
 
-    with urlopen(url, timeout=10) as f:
-        return (url, BeautifulSoup(f.read().decode('utf-8'), 'html5lib'))
+    response = requests.get(url, timeout=10.0)
+
+    return (url, BeautifulSoup(response.text, 'html5lib'))
 
 
 def build_name(restaurant):
@@ -130,7 +131,7 @@ def translate(key):
         '汁なし担々麺': '국물 없는 탄탄면',
         '西洋各国料理（その他）': '서양요리',
         'ジンギスカン': '징기스칸',
-    }[key]
+    }.get(key, key)
 
 
 if __name__ == '__main__':
