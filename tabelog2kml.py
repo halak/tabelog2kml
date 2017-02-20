@@ -1,3 +1,4 @@
+import click
 import xml.etree.ElementTree as ET
 
 class Restaurant(object):
@@ -72,15 +73,34 @@ def load_pages(urls):
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
         futures = [executor.submit(load_page, url) for url in urls]
-        return dict([future.result() for future in concurrent.futures.as_completed(futures)])
+        with click.progressbar(length=len(futures), label='fetching...') as bar:
+            pages = {}
+            count = 0
+            for future in concurrent.futures.as_completed(futures):
+                url, page = future.result()
+                pages[url] = page
+                bar.update(1)
+
+            return pages
 
 
 def load_page(url):
-    import requests
+    import time
+    from requests import get
+    from requests.exceptions import ChunkedEncodingError, ConnectionError, ReadTimeout
+    from requests.packages.urllib3.exceptions import ReadTimeoutError
+
+    retry = 0
+    while True:
+        try:
+            response = get(url, timeout=10.0)
+            break
+        except (ChunkedEncodingError, ConnectionError, ReadTimeout, ReadTimeoutError):
+            retry += 1
+
+        time.sleep(min(retry * 0.5, 20))
+
     from bs4 import BeautifulSoup
-
-    response = requests.get(url, timeout=10.0)
-
     return (url, BeautifulSoup(response.text, 'html5lib'))
 
 
