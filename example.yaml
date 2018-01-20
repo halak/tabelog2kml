@@ -1,7 +1,10 @@
 name: Tabelog URLs to KML Example
 description: These are Osusume Restaurant :)
-urls:
-  - https://tabelog.com/kumamoto/A4301/A430101/43000307/
-  - https://tabelog.com/fukuoka/A4001/A400102/40000017/
-  - https://tabelog.com/hyogo/A2801/A280103/28001806/
-  - https://tabelog.com/tokyo/A1310/A131001/13000379/
+restaurants:
+  - url: https://tabelog.com/kumamoto/A4301/A430101/43000307/
+  - url: https://tabelog.com/fukuoka/A4001/A400102/40000017/
+    color: red
+  - url: https://tabelog.com/hyogo/A2801/A280103/28001806/
+    icon: beef
+    comment: Great!
+  - url: https://tabelog.com/tokyo/A1310/A131001/13000379/

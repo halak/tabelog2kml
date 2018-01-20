@@ -1,10 +1,42 @@
 import click
+import json
 import xml.etree.ElementTree as ET
+from collections import defaultdict, namedtuple
+
+Icons = {
+    'default': '1577',
+    'fastfood': '1567',
+    'noodle': '1640',
+    'sushi': '1835',
+    'beef': '1553',
+    'chicken': '1545',
+    'beer': '1879',
+    'cafe': '1534',
+    'dessert': '1607',
+    'cocktail': '1517',
+    'fish': '1573',
+}
+
+Colors = {
+    'default': '0288D1',
+    'red': 'A52714',
+    'orange': 'F9A825',
+    'yellow': 'FFD600',
+    'green': '097138',
+    'blue': '0288D1',
+    'purple': '673AB7',
+    'black': '000000',
+    'brown': '4E342E',
+    'gray': '757575',
+}
 
 class Restaurant(object):
-    def __init__(self, page):        
-        information = page.find('div', id='rstdata-wrap').find('table')
-        self.url = page.find(id='rdnavi2-top').find('a')['href']
+    CategoryDescription = namedtuple('CategoryDescription', ['key', 'icon', 'translated_text'])
+    categories = None
+
+    def __init__(self, page, userdata):
+        information = page.find('div', {'class': 'rstinfo-table'}).find('table')
+        self.url = page.find('link', {'rel': 'canonical'})['href']
 
         string = lambda s: ''.join(s.stripped_strings)
 
@@ -12,18 +44,40 @@ class Restaurant(object):
         rows = {string(row.find('th')): string(row.find('td')) for row in rows}
 
         self.name = rows.get('店名')
-        self.category = rows.get('ジャンル')
+        self.categories = [Restaurant.get_category(s.strip()) for s in rows.get('ジャンル').replace('、', ',').split(',')]
 
         from urllib.parse import urlparse, parse_qs as urldecode
-        m = information.find('div', 'rst-map').find('img')
+        m = information.find('div', {'class': 'rstinfo-table__map'}).find('img')
         location = urldecode(urlparse(m['data-original']).query)['center']
         location = tuple([s.strip() for s in location[0].split(',')] + ['0.0'])
         self.location = (location[1], location[0], location[2])
 
         self.closed_comment = rows.get('定休日')
 
-        self.thumbnail_urls = [img['src'] for img in page.find('ul', 'rstdtl-top-photo__list').find_all('img', height='150')]
-        
+        self.thumbnail_urls = [img['src'] for img in page.find('ul', 'rstdtl-top-postphoto__list').find_all('img')]
+        self.comment = userdata.get('comment', '')
+        self.icon = userdata.get('icon', Restaurant.guess_icon(self.categories))
+        self.color = userdata.get('color', 'default')
+
+    @classmethod
+    def get_category(cls, key):
+        if cls.categories is None:
+            cls.categories = {}
+            import csv
+            with open('category.csv', encoding='utf-8') as csvfile:
+                reader = csv.reader(csvfile)
+                for row in reader:
+                    key, icon, translated = row
+                    cls.categories[key] = cls.CategoryDescription(key, icon, translated)
+        return cls.categories.get(key, cls.CategoryDescription(key, 'default', key))
+
+    @staticmethod
+    def guess_icon(categories):
+        if len(categories) > 0:
+            return categories[0].icon or 'default'
+        else:
+            return 'default'
+
 
 def main():
     import yaml
@@ -31,7 +85,7 @@ def main():
     with open('example.yaml', 'r', encoding='utf-8') as f:
         data = yaml.load(f)
 
-    restaurants = load_restaurants(data['urls'])
+    restaurants = load_restaurants(data['restaurants'])
 
     kml = ET.Element('kml', {'xmlns': 'http://www.opengis.net/kml/2.2'})
     document = ET.SubElement(kml, 'Document')
@@ -40,7 +94,10 @@ def main():
     description = ET.SubElement(document, 'description')
     description.text = data.get('description', '')
 
-    style_name = insert_basic_style(document)
+    for icon in Icons.values():
+        for color in Colors.values():
+            insert_style(document, icon, color)
+
     folder = ET.SubElement(document, 'Folder')
     for restaurant in restaurants:
         placemark = ET.SubElement(folder, 'Placemark')
@@ -49,7 +106,7 @@ def main():
         description = ET.SubElement(placemark, 'description')
         description.text = build_description(restaurant)
         style_url = ET.SubElement(placemark, 'styleUrl')
-        style_url.text = style_name
+        style_url.text = build_style_map_id(restaurant)
         point = ET.SubElement(placemark, 'Point')
         coordinates = ET.SubElement(point, 'coordinates')
         coordinates.text = ','.join(restaurant.location)
@@ -63,9 +120,9 @@ def main():
         f.write(xml)
 
 
-def load_restaurants(urls):
-    pages = load_pages(urls)
-    return [Restaurant(pages[url]) for url in urls]
+def load_restaurants(restaurants):
+    pages = load_pages([restaurant['url'] for restaurant in restaurants])
+    return [Restaurant(pages[restaurant['url']], restaurant) for restaurant in restaurants]
 
 
 def load_pages(urls):
@@ -105,22 +162,36 @@ def load_page(url):
 
 
 def build_name(restaurant):
-    return translate(restaurant.category) + ' - ' + restaurant.name
+    if len(restaurant.categories) > 0:
+        return restaurant.categories[0].translated_text + ' - ' + restaurant.name
+    else:
+        return restaurant.name
 
 
 def build_description(restaurant):
-    return restaurant.closed_comment + '<br>' + restaurant.url
+    s = restaurant.closed_comment + '<br>' + restaurant.url
+
+    if len(restaurant.comment) > 0:
+        s = s + '<br>' + restaurant.comment
+
+    return s
 
 
-def insert_basic_style(document):
-    style_map_id = 'icon-1899-0288D1'
+def build_style_map_id(restaurant):
+    icon = Icons.get(restaurant.icon, Icons['default'])
+    color = Colors.get(restaurant.color, Colors['default'])
+    return f'#icon-{icon}-{color}'
+
+
+def insert_style(document, icon, color):
+    style_map_id = f'icon-{icon}-{color}'
     normal_style_id = style_map_id + '-normal'
     highlight_style_id = style_map_id + '-highlight'
 
     for style_id in (normal_style_id, highlight_style_id):
         style = ET.SubElement(document, 'Style', {'id': style_id})
         iconStyle = ET.SubElement(style, 'IconStyle')
-        ET.SubElement(iconStyle, 'color').text = 'ffD18802'
+        ET.SubElement(iconStyle, 'color').text = f'ff{color[4:6]}{color[2:4]}{color[0:2]}'
         ET.SubElement(iconStyle, 'scale').text = '1.0'
         icon = ET.SubElement(iconStyle, 'Icon')
         ET.SubElement(icon, 'href').text = 'http://www.gstatic.com/mapspro/images/stock/503-wht-blank_maps.png'
@@ -134,24 +205,6 @@ def insert_basic_style(document):
     pair = ET.SubElement(style_map, 'Pair')
     ET.SubElement(pair, 'Key').text = 'highlight'
     ET.SubElement(pair, 'styleUrl').text = '#' + highlight_style_id
-
-    return '#' + style_map_id
-
-
-def translate(key):
-    return {
-        '寿司': '스시',
-        'ラーメン': '라멘',
-        '魚介料理・海鮮料理': '해산물',
-        '海鮮丼': '해산물',
-        'うなぎ': '장어',
-        'おでん': '오뎅',
-        'とんかつ': '돈까스',
-        'そば': '소바',
-        '汁なし担々麺': '국물 없는 탄탄면',
-        '西洋各国料理（その他）': '서양요리',
-        'ジンギスカン': '징기스칸',
-    }.get(key, key)
 
 
 if __name__ == '__main__':
