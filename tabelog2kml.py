@@ -62,14 +62,20 @@ class Restaurant(object):
     @classmethod
     def get_category(cls, key):
         if cls.categories is None:
-            cls.categories = {}
-            import csv
-            with open('category.csv', encoding='utf-8') as csvfile:
-                reader = csv.reader(csvfile)
-                for row in reader:
-                    key, icon, translated = row
-                    cls.categories[key] = cls.CategoryDescription(key, icon, translated)
+            cls.categories = cls.build_categories('category.csv')
+
         return cls.categories.get(key, cls.CategoryDescription(key, 'default', key))
+
+    @classmethod
+    def build_categories(cls, path):
+        categories = {}
+        import csv
+        with open(path, encoding='utf-8-sig') as csvfile:
+            reader = csv.reader(csvfile)
+            for row in reader:
+                key, icon, translated = row
+                categories[key] = cls.CategoryDescription(key, icon, translated)
+        return categories
 
     @staticmethod
     def guess_icon(categories):
