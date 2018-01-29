@@ -56,8 +56,19 @@ class Restaurant(object):
 
         self.thumbnail_urls = [img['src'] for img in page.find('ul', 'rstdtl-top-postphoto__list').find_all('img')]
         self.comment = userdata.get('comment', '')
-        self.icon = userdata.get('icon', Restaurant.guess_icon(self.categories))
+        self.icon = userdata.get('icon', self.primary_category.icon if self.primary_category else 'default')
         self.color = userdata.get('color', 'default')
+
+    @property
+    def primary_category(self):
+        if len(self.categories) > 0:
+            for category in self.categories:
+                if category.key not in ('その他',):
+                    return category
+            else:
+                return self.categories[0]
+        else:
+            return None
 
     @classmethod
     def get_category(cls, key):
@@ -76,13 +87,6 @@ class Restaurant(object):
                 key, icon, translated = row
                 categories[key] = cls.CategoryDescription(key, icon, translated)
         return categories
-
-    @staticmethod
-    def guess_icon(categories):
-        if len(categories) > 0:
-            return categories[0].icon or 'default'
-        else:
-            return 'default'
 
 
 def main():
@@ -168,8 +172,9 @@ def load_page(url):
 
 
 def build_name(restaurant):
-    if len(restaurant.categories) > 0:
-        return restaurant.categories[0].translated_text + ' - ' + restaurant.name
+    primary_category = restaurant.primary_category
+    if primary_category:
+        return primary_category.translated_text + ' - ' + restaurant.name
     else:
         return restaurant.name
 
