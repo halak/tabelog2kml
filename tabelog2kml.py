@@ -91,7 +91,6 @@ class Restaurant(object):
 
 def main():
     import yaml
-
     with open('example.yaml', 'r', encoding='utf-8') as f:
         data = yaml.load(f)
 
